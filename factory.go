@@ -91,6 +91,10 @@ func (f *Factory[T]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T], error) 
 		if fl.isAuto() {
 			return r, fmt.Errorf("field '%s' is not allowed in input", fl.name)
 		}
+		// verify readonly field does not exist in map
+		if fl.is(flagReadonly) {
+			return r, fmt.Errorf("field '%s' is readonly and not allowed in input", fl.name)
+		}
 	}
 
 	if len(auto) > 0 {
@@ -214,6 +218,10 @@ func (f *Factory[T]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[T], 
 		// verify auto field does not exist in map
 		if fl.isAuto() {
 			return r, fmt.Errorf("field '%s' is not allowed in input", fl.name)
+		}
+		// verify readonly field does not exist in map
+		if fl.is(flagReadonly) {
+			return r, fmt.Errorf("field '%s' is readonly and not allowed in input", fl.name)
 		}
 	}
 

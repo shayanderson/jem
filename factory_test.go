@@ -825,6 +825,33 @@ func TestFactory_MakeMap_WithPersist(t *testing.T) {
 	}
 }
 
+func TestFactory_MakeMap_WithReadonly(t *testing.T) {
+	type testStruct struct {
+		ID     string `json:"id"     validate:"id"`
+		Name   string `json:"name"   validate:"required"`
+		ROTest string `json:"roTest" validate:"readonly"`
+	}
+	f := New[testStruct]()
+	_, err := f.MakeMap(map[string]any{
+		"name": "Alice",
+	})
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+
+	_, err = f.MakeMap(map[string]any{
+		"name":   "Alice",
+		"roTest": "test",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "field 'testStruct.ROTest' is readonly and not allowed in input"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+}
+
 func TestFactory_MakeMapMany(t *testing.T) {
 	f := New[testUser]()
 	r, err := f.MakeMapMany([]map[string]any{
@@ -1698,6 +1725,35 @@ func TestFactory_MakePartialMap_WithPersist(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	wantErr = "field 'testStruct2.persistTest' validation failed for rule 'required'"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+}
+
+func TestFactory_MakePartialMap_WithReadonly(t *testing.T) {
+	type testStruct struct {
+		ID     string `json:"id"     validate:"id"`
+		Name   string `json:"name"   validate:"required"`
+		ROTest string `json:"roTest" validate:"readonly"`
+	}
+	f := New[testStruct]()
+	_, err := f.MakePartialMap(map[string]any{
+		"id":   "u-123",
+		"name": "Alice",
+	})
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+
+	_, err = f.MakePartialMap(map[string]any{
+		"id":     "u-123",
+		"name":   "Alice2",
+		"roTest": "value",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "field 'testStruct.ROTest' is readonly and not allowed in input"
 	if err.Error() != wantErr {
 		t.Fatalf("expected error message %q, got: %q", wantErr, err)
 	}

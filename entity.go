@@ -18,6 +18,7 @@ const (
 	flagAutoFull
 	flagAutoPartial
 	flagPersist
+	flagReadonly
 )
 
 // field represents a struct field
@@ -61,6 +62,7 @@ func newEntity(v any) *entity {
 		"auto:full":    flagAutoFull,
 		"auto:partial": flagAutoPartial,
 		"persist":      flagPersist,
+		"readonly":     flagReadonly,
 	}
 	var flags flag
 	for i := 0; i < t.NumField(); i++ {
@@ -119,6 +121,7 @@ func newEntity(v any) *entity {
 		"auto:full":    flagAutoFull,
 		"auto:partial": flagAutoPartial,
 		"persist":      flagPersist,
+		"readonly":     flagReadonly,
 	}
 	// register custom validation rules
 	for k, v := range rules {

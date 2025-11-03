@@ -134,6 +134,8 @@ JEM supports the following special validation rules. These rules apply only to *
   - `auto:partial` — must be included in auto-map when creating partial output
 - `validate:"persist"` — marks fields that must always be included
   - should be used with rules like `required` if non-empty values are expected
+- `validate:"readonly"` — marks fields that are read-only
+  - must not be included in JSON input objects
 
 Partial object validation is only allowed for **top-level** fields, meaning nested fields are not partially validated.
 
