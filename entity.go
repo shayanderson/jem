@@ -110,6 +110,9 @@ func newEntity(v any) *entity {
 		if v == "-" || v == "" {
 			return ""
 		}
+		if i := strings.IndexByte(v, ','); i != -1 { // remove options
+			v = v[:i]
+		}
 		return v
 	}
 	e.validator.RegisterTagNameFunc(jsonTagFn)

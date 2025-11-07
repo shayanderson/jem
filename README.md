@@ -35,7 +35,7 @@ type User struct {
 Parse and map a single JSON object:
 
 ```go
-f := jem.New[User]()
+f := jem.New[User, string]() // second type parameter is type of ID field
 
 data := []byte(`{"name":"Alice","email":"alice@example.com","age":25}`)
 
@@ -54,7 +54,7 @@ fmt.Printf("res.Map: %+v\n", res.Map)
 Parse and map multiple JSON objects:
 
 ```go
-f := jem.New[User]()
+f := jem.New[User, string]()
 
 arr := []byte(`[{"name":"Alice","email":"alice@example.com","age":25},
                 {"name":"Bob","email":"bob@example.com","age":30}]`)
@@ -78,15 +78,17 @@ for k, v := range res {
 Parse and map partial JSON objects:
 
 ```go
-f := jem.New[User]()
+f := jem.New[User, string]()
 
 r, err := f.MakePartial([]byte(`{"id":"u-101","name":"Bob"}`))
 if err != nil {
     panic(err)
 }
+fmt.Println("r.ID:", r.ID)
 fmt.Printf("r.Value: %+v\n", r.Value)
 fmt.Printf("r.Map: %+v\n", r.Map)
 // output:
+// r.ID: u-101
 // r.Value: &{ID:u-101 Name:Bob Email: Age:0}
 // r.Map: map[name:Bob]
 ```
@@ -94,7 +96,7 @@ fmt.Printf("r.Map: %+v\n", r.Map)
 Parse and map multiple partial JSON objects:
 
 ```go
-f := jem.New[User]()
+f := jem.New[User, string]()
 
 arr := []byte(`[{"id":"u-101","name":"Bob"},
                 {"id":"u-102","age":27}]`)
@@ -105,15 +107,44 @@ if err != nil {
 }
 
 for k, v := range res {
+    fmt.Printf("%d: v.ID: %s\n", k, v.ID)
     fmt.Printf("%d: v.Value %+v\n", k, v.Value)
     fmt.Printf("%d: v.Map %+v\n", k, v.Map)
 }
 // output:
+// 0: v.ID: u-101
 // 0: v.Value &{ID:u-101 Name:Bob Email: Age:0}
 // 0: v.Map map[name:Bob]
+// 1: v.ID: u-102
 // 1: v.Value &{ID:u-102 Name: Email: Age:27}
 // 1: v.Map map[age:27]
 ```
+
+You can also use readers as input:
+
+```go
+f := jem.New[User, string]()
+
+// example http handler
+http.HandleFunc("POST /user", func(w http.ResponseWriter, r *http.Request) {
+    defer r.Body.Close()
+
+    doc, err := f.Read(r.Body)
+    if err != nil {
+        if errors.Is(err, jem.ErrRead) { // reading error
+            http.Error(w, err.Error(), http.StatusBadRequest)
+            return
+        }
+        http.Error(w, "validation failed: "+err.Error(), http.StatusUnprocessableEntity)
+        return
+    }
+
+    // use doc.ID, doc.Value and doc.Map
+})
+```
+
+Reader methods are: `Read`, `ReadMany`, `ReadPartial`, `ReadPartialMany`.
+By defaults `jem.LimitReadSize` is set to 10 MB to avoid reading very large inputs. You can set it to `0` to disable the limit or change it to a different size (in bytes).
 
 ## Validation
 
@@ -144,7 +175,7 @@ Partial object validation is only allowed for **top-level** fields, meaning nest
 You can define custom validation rules using the `RegisterValidation` method on the factory's validator:
 
 ```go
-f := New[User]()
+f := New[User, string]()
 f.Validator().RegisterValidation("rule", func(fl validator.FieldLevel) bool {
     return fl.Field().String() == "test"
 })

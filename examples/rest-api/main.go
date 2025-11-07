@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -99,13 +100,13 @@ func (s *UserStore) Update(user User, m map[string]any) (*User, error) {
 
 // UserHandler handles user-related HTTP requests
 type UserHandler struct {
-	factory *jem.Factory[User]
+	factory *jem.Factory[User, string]
 	store   *UserStore
 }
 
 // newUserHandler creates a new user handler
 func newUserHandler(store *UserStore) *UserHandler {
-	return &UserHandler{factory: jem.New[User](), store: store}
+	return &UserHandler{factory: jem.New[User, string](), store: store}
 }
 
 // get handles GET requests for users
@@ -146,15 +147,14 @@ func (u *UserHandler) patch(w http.ResponseWriter, r *http.Request) {
 
 // post handles POST requests for users
 func (u *UserHandler) post(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "failed to read request body", http.StatusBadRequest)
-		return
-	}
 	defer r.Body.Close()
 
-	res, err := u.factory.MakeMany(body)
+	res, err := u.factory.ReadMany(r.Body)
 	if err != nil {
+		if errors.Is(err, jem.ErrRead) {
+			http.Error(w, "failed to read request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		writeJSON(
 			w,
 			http.StatusUnprocessableEntity,
@@ -162,6 +162,7 @@ func (u *UserHandler) post(w http.ResponseWriter, r *http.Request) {
 		)
 		return
 	}
+
 	ids := []string{}
 	for _, item := range res {
 		id, err := u.store.Create(*item.Value)

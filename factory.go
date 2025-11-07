@@ -5,9 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/go-playground/validator/v10"
 )
+
+// ErrRead is returned when reading from the reader fails
+var ErrRead = errors.New("failed to read input")
+
+// LimitReadSize limits the maximum size of the reader input
+// default is 10 MB
+// set to 0 to disable limit
+var LimitReadSize int64 = 10 * 1024 * 1024 // 10 MB
 
 // AutoMap is a map of auto-generated field names to their values
 type AutoMap = map[string]func() any
@@ -15,35 +24,37 @@ type AutoMap = map[string]func() any
 // Doc holds the deserialized and validated JSON document and its raw map representation
 // on full, the `Value` and `Map` fields contain the full object
 // on partial, the `Value` and `Map` fields contain a partial object
-type Doc[T any] struct {
-	// Value is the deserialized and validated JSON document
-	Value *T
+type Doc[T any, ID comparable] struct {
+	// ID is the value of the ID field
+	ID ID
 	// Map is the raw map representation of the JSON document
 	Map map[string]any
+	// Value is the deserialized and validated JSON document
+	Value *T
 }
 
 // Factory is responsible for creating and validating entities
-type Factory[T any] struct {
+type Factory[T any, ID comparable] struct {
 	entity *entity
 }
 
 // New creates a new factory for the given entity type
-func New[T any]() *Factory[T] {
+func New[T any, ID comparable]() *Factory[T, ID] {
 	var v T
-	return &Factory[T]{entity: newEntity(v)}
+	return &Factory[T, ID]{entity: newEntity(v)}
 }
 
 // Make decodes and maps the JSON document to the entity and validates it
-func (f *Factory[T]) Make(data []byte, auto ...AutoMap) (Doc[T], error) {
+func (f *Factory[T, ID]) Make(data []byte, auto ...AutoMap) (Doc[T, ID], error) {
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
-		return Doc[T]{}, fmt.Errorf("json parse to map failed: %w", err)
+		return Doc[T, ID]{}, fmt.Errorf("json parse to map failed: %w", err)
 	}
 	return f.MakeMap(m, auto...)
 }
 
 // MakeMany decodes and maps the JSON array to multiple entities and validates them
-func (f *Factory[T]) MakeMany(data []byte, auto ...AutoMap) ([]Doc[T], error) {
+func (f *Factory[T, ID]) MakeMany(data []byte, auto ...AutoMap) ([]Doc[T, ID], error) {
 	var arr []map[string]any
 	if err := json.Unmarshal(data, &arr); err != nil {
 		return nil, fmt.Errorf("json parse to array failed: %w", err)
@@ -53,7 +64,7 @@ func (f *Factory[T]) MakeMany(data []byte, auto ...AutoMap) ([]Doc[T], error) {
 		return nil, errors.New("input is empty")
 	}
 
-	r := make([]Doc[T], len(arr))
+	r := make([]Doc[T, ID], len(arr))
 	for i, m := range arr {
 		res, err := f.MakeMap(m, auto...)
 		if err != nil {
@@ -65,8 +76,8 @@ func (f *Factory[T]) MakeMany(data []byte, auto ...AutoMap) ([]Doc[T], error) {
 }
 
 // MakeMap maps the JSON document to the entity and validates it
-func (f *Factory[T]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T], error) {
-	var r Doc[T]
+func (f *Factory[T, ID]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T, ID], error) {
+	var r Doc[T, ID]
 	if len(f.entity.fields) == 0 {
 		return r, fmt.Errorf("struct '%s' has zero fields with json tags", f.entity.name)
 	}
@@ -83,10 +94,6 @@ func (f *Factory[T]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T], error) 
 		if !ok {
 			return r, fmt.Errorf("unknown field '%s'", k)
 		}
-		// verify id field does not exist in map, unless persist
-		if fl.is(flagID) && !fl.is(flagPersist) {
-			return r, fmt.Errorf("field '%s' with validation rule 'id' is not allowed in input", k)
-		}
 		// verify auto field does not exist in map
 		if fl.isAuto() {
 			return r, fmt.Errorf("field '%s' is not allowed in input", fl.name)
@@ -94,6 +101,21 @@ func (f *Factory[T]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T], error) 
 		// verify readonly field does not exist in map
 		if fl.is(flagReadonly) {
 			return r, fmt.Errorf("field '%s' is readonly and not allowed in input", fl.name)
+		}
+		// verify id field
+		if fl.is(flagID) {
+			// verify id field does not exist in map, unless persist
+			if !fl.is(flagPersist) {
+				return r, fmt.Errorf(
+					"field '%s' with validation rule 'id' is not allowed in input", k,
+				)
+			}
+			// set ID value
+			id, ok := r.Map[k].(ID)
+			if !ok {
+				return r, fmt.Errorf("id field '%s' has invalid type", k)
+			}
+			r.ID = id
 		}
 	}
 
@@ -138,12 +160,12 @@ func (f *Factory[T]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T], error) 
 }
 
 // MakeMapMany maps the JSON documents to multiple entities and validates them
-func (f *Factory[T]) MakeMapMany(arr []map[string]any, auto ...AutoMap) ([]Doc[T], error) {
+func (f *Factory[T, ID]) MakeMapMany(arr []map[string]any, auto ...AutoMap) ([]Doc[T, ID], error) {
 	// check for empty input
 	if len(arr) == 0 {
 		return nil, errors.New("input is empty")
 	}
-	var r []Doc[T]
+	var r []Doc[T, ID]
 	for i, m := range arr {
 		res, err := f.MakeMap(m, auto...)
 		if err != nil {
@@ -155,16 +177,16 @@ func (f *Factory[T]) MakeMapMany(arr []map[string]any, auto ...AutoMap) ([]Doc[T
 }
 
 // MakePartial decodes and maps the JSON document to the entity and validates it
-func (f *Factory[T]) MakePartial(data []byte, auto ...AutoMap) (Doc[T], error) {
+func (f *Factory[T, ID]) MakePartial(data []byte, auto ...AutoMap) (Doc[T, ID], error) {
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
-		return Doc[T]{}, fmt.Errorf("json parse to map failed: %w", err)
+		return Doc[T, ID]{}, fmt.Errorf("json parse to map failed: %w", err)
 	}
 	return f.MakePartialMap(m, auto...)
 }
 
 // MakePartialMany decodes and maps the JSON array to multiple entities and validates them
-func (f *Factory[T]) MakePartialMany(data []byte, auto ...AutoMap) ([]Doc[T], error) {
+func (f *Factory[T, ID]) MakePartialMany(data []byte, auto ...AutoMap) ([]Doc[T, ID], error) {
 	var arr []map[string]any
 	if err := json.Unmarshal(data, &arr); err != nil {
 		return nil, fmt.Errorf("json parse to array failed: %w", err)
@@ -174,7 +196,7 @@ func (f *Factory[T]) MakePartialMany(data []byte, auto ...AutoMap) ([]Doc[T], er
 		return nil, errors.New("input is empty")
 	}
 
-	r := make([]Doc[T], len(arr))
+	r := make([]Doc[T, ID], len(arr))
 	for i, m := range arr {
 		res, err := f.MakePartialMap(m, auto...)
 		if err != nil {
@@ -186,8 +208,8 @@ func (f *Factory[T]) MakePartialMany(data []byte, auto ...AutoMap) ([]Doc[T], er
 }
 
 // MakePartialMap maps the JSON document to the entity and validates it
-func (f *Factory[T]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[T], error) {
-	var r Doc[T]
+func (f *Factory[T, ID]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[T, ID], error) {
+	var r Doc[T, ID]
 	if len(f.entity.fields) == 0 {
 		return r, fmt.Errorf("struct '%s' has zero fields with json tags", f.entity.name)
 	}
@@ -207,6 +229,12 @@ func (f *Factory[T]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[T], 
 		if len(r.Map) < 2 {
 			return r, errors.New("input must have id field and at least one other field")
 		}
+		// set ID value
+		id, ok := r.Map[f.entity.id.tag].(ID)
+		if !ok {
+			return r, fmt.Errorf("id field '%s' has invalid type", f.entity.id.tag)
+		}
+		r.ID = id
 	}
 
 	for k := range r.Map {
@@ -290,15 +318,15 @@ func (f *Factory[T]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[T], 
 }
 
 // MakePartialMapMany maps the JSON documents to multiple entities and validates them
-func (f *Factory[T]) MakePartialMapMany(
+func (f *Factory[T, ID]) MakePartialMapMany(
 	arr []map[string]any,
 	auto ...AutoMap,
-) ([]Doc[T], error) {
+) ([]Doc[T, ID], error) {
 	// check for empty input
 	if len(arr) == 0 {
 		return nil, errors.New("input is empty")
 	}
-	var r []Doc[T]
+	var r []Doc[T, ID]
 	for i, m := range arr {
 		res, err := f.MakePartialMap(m, auto...)
 		if err != nil {
@@ -309,8 +337,63 @@ func (f *Factory[T]) MakePartialMapMany(
 	return r, nil
 }
 
+// Read reads from the reader, decodes and maps the JSON document to the entity and validates it
+// LimitReadSize limits the maximum size of the reader input
+func (f *Factory[T, ID]) Read(reader io.Reader, auto ...AutoMap) (Doc[T, ID], error) {
+	if LimitReadSize > 0 {
+		reader = io.LimitReader(reader, LimitReadSize)
+	}
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return Doc[T, ID]{}, fmt.Errorf("%w: %v", ErrRead, err)
+	}
+	return f.Make(b, auto...)
+}
+
+// ReadMany reads from the reader, decodes and maps the JSON array to multiple entities
+// and validates them
+// LimitReadSize limits the maximum size of the reader input
+func (f *Factory[T, ID]) ReadMany(reader io.Reader, auto ...AutoMap) ([]Doc[T, ID], error) {
+	if LimitReadSize > 0 {
+		reader = io.LimitReader(reader, LimitReadSize)
+	}
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrRead, err)
+	}
+	return f.MakeMany(b, auto...)
+}
+
+// ReadPartial reads from the reader, decodes and maps the JSON document to the entity
+// and validates it
+// LimitReadSize limits the maximum size of the reader input
+func (f *Factory[T, ID]) ReadPartial(reader io.Reader, auto ...AutoMap) (Doc[T, ID], error) {
+	if LimitReadSize > 0 {
+		reader = io.LimitReader(reader, LimitReadSize)
+	}
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return Doc[T, ID]{}, fmt.Errorf("%w: %v", ErrRead, err)
+	}
+	return f.MakePartial(b, auto...)
+}
+
+// ReadPartialMany reads from the reader, decodes and maps the JSON array to multiple entities
+// and validates them
+// LimitReadSize limits the maximum size of the reader input
+func (f *Factory[T, ID]) ReadPartialMany(reader io.Reader, auto ...AutoMap) ([]Doc[T, ID], error) {
+	if LimitReadSize > 0 {
+		reader = io.LimitReader(reader, LimitReadSize)
+	}
+	b, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrRead, err)
+	}
+	return f.MakePartialMany(b, auto...)
+}
+
 // Validator returns the validator for the factory
-func (f *Factory[T]) Validator() *validator.Validate {
+func (f *Factory[T, ID]) Validator() *validator.Validate {
 	return f.entity.validator
 }
 

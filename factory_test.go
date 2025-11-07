@@ -1,6 +1,7 @@
 package jem
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +20,7 @@ func TestNewFactory(t *testing.T) {
 	type testStruct struct {
 		ID string `json:"id"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	if f == nil {
 		t.Fatal("expected non-nil factory")
 	}
@@ -32,7 +33,7 @@ func TestNewFactory(t *testing.T) {
 }
 
 func TestFactory_Make(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.Make([]byte(`{"name":"Alice","age":30}`))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -40,8 +41,11 @@ func TestFactory_Make(t *testing.T) {
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
+	if r.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", r.ID)
+	}
 	if r.Value.ID != "" {
-		t.Fatalf("expected ID to be empty, got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID to be empty, got '%s'", r.Value.ID)
 	}
 	if r.Value.Name != "Alice" {
 		t.Fatalf("expected name 'Alice', got '%s'", r.Value.Name)
@@ -83,7 +87,7 @@ func TestFactory_Make_Nested(t *testing.T) {
 		Name string      `json:"name" validate:"required"`
 		TS2  testStruct2 `json:"ts2"  validate:"required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.Make([]byte(`{
 		"name": "test1",
 		"ts2": {
@@ -97,11 +101,14 @@ func TestFactory_Make_Nested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+	if r.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "" {
-		t.Fatalf("expected ID to be empty, got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID to be empty, got '%s'", r.Value.ID)
 	}
 	if r.Value.Name != "test1" {
 		t.Fatalf("expected name 'test1', got '%s'", r.Value.Name)
@@ -204,7 +211,7 @@ func TestFactory_Make_Any(t *testing.T) {
 		Name   string `json:"name"   validate:"required"`
 		Config any    `json:"config"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.Make([]byte(`{"name":"test1"}`))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -216,7 +223,7 @@ func TestFactory_Make_Any(t *testing.T) {
 }
 
 func TestFactory_Make_InvalidJSON(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.Make([]byte(`{"name":"Alice","age":30,}`))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -232,7 +239,7 @@ func TestFactory_Make_InvalidJSON(t *testing.T) {
 }
 
 func TestFactory_MakeMany(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMany([]byte(`[
 		{"name":"Alice","age":30},
 		{"name":"Bob","age":25}
@@ -245,11 +252,14 @@ func TestFactory_MakeMany(t *testing.T) {
 	}
 
 	a := r[0]
+	if a.ID != "" {
+		t.Fatalf("expected ID to be empty for Alice, got '%s'", a.ID)
+	}
 	if a.Value == nil {
 		t.Fatal("expected non-nil Doc for Alice")
 	}
 	if a.Value.ID != "" {
-		t.Fatalf("expected ID to be empty for Alice, got '%s'", a.Value.ID)
+		t.Fatalf("expected value ID to be empty for Alice, got '%s'", a.Value.ID)
 	}
 	if a.Value.Name != "Alice" {
 		t.Fatalf("expected name 'Alice', got '%s'", a.Value.Name)
@@ -277,11 +287,14 @@ func TestFactory_MakeMany(t *testing.T) {
 	}
 
 	b := r[1]
+	if b.ID != "" {
+		t.Fatalf("expected ID to be empty for Bob, got '%s'", b.ID)
+	}
 	if b.Value == nil {
 		t.Fatal("expected non-nil Doc for Bob")
 	}
 	if b.Value.ID != "" {
-		t.Fatalf("expected ID to be empty for Bob, got '%s'", b.Value.ID)
+		t.Fatalf("expected value ID to be empty for Bob, got '%s'", b.Value.ID)
 	}
 	if b.Value.Name != "Bob" {
 		t.Fatalf("expected name 'Bob', got '%s'", b.Value.Name)
@@ -310,7 +323,7 @@ func TestFactory_MakeMany(t *testing.T) {
 }
 
 func TestFactory_MakeMany_InvalidJSON(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMany([]byte(`[
 		{"name":"Alice","age":30},
 		{"name":"Bob","age":25,}
@@ -329,7 +342,7 @@ func TestFactory_MakeMany_InvalidJSON(t *testing.T) {
 }
 
 func TestFactory_MakeMany_Empty(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMany([]byte(`[]`))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -344,7 +357,7 @@ func TestFactory_MakeMany_Empty(t *testing.T) {
 }
 
 func TestFactory_MakeMany_WithIndexError(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMany([]byte(`[
 		{"name":"Alice","age":30},
 		{"name":"Bob"}
@@ -362,7 +375,7 @@ func TestFactory_MakeMany_WithIndexError(t *testing.T) {
 }
 
 func TestFactory_MakeMap(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 		"age":  30,
@@ -370,11 +383,14 @@ func TestFactory_MakeMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+	if r.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "" {
-		t.Fatalf("expected ID to be empty, got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID to be empty, got '%s'", r.Value.ID)
 	}
 	if r.Value.Name != "Alice" {
 		t.Fatalf("expected name 'Alice', got '%s'", r.Value.Name)
@@ -404,7 +420,7 @@ func TestFactory_MakeMap(t *testing.T) {
 
 func TestFactory_MakeMap_ZeroFields(t *testing.T) {
 	type testStruct struct{}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -422,7 +438,7 @@ func TestFactory_MakeMap_ZeroFields(t *testing.T) {
 }
 
 func TestFactory_MakeMap_Empty(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMap(map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -437,7 +453,7 @@ func TestFactory_MakeMap_Empty(t *testing.T) {
 }
 
 func TestFactory_MakeMap_UnknownField(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 		"age":  30,
@@ -463,7 +479,7 @@ func TestFactory_MakeMap_UnknownFieldNested(t *testing.T) {
 		ID     string     `json:"id"     validate:"id"`
 		Nested testNested `json:"nested" validate:"required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.MakeMap(map[string]any{
 		"nested": map[string]any{
 			"field1": "value1",
@@ -480,7 +496,7 @@ func TestFactory_MakeMap_UnknownFieldNested(t *testing.T) {
 }
 
 func TestFactory_MakeMap_Validate(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	_, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 	})
@@ -488,6 +504,22 @@ func TestFactory_MakeMap_Validate(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	wantErr := "field 'testUser.age' validation failed for rule 'required'"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+
+	type testStruct struct {
+		ID   string `json:"id"             validate:"id,required,len=5"`
+		Name string `json:"name,omitempty" validate:"required"`
+	}
+	f2 := New[testStruct, string]()
+	_, err = f2.MakeMap(map[string]any{
+		"name": "",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr = "field 'testStruct.name' validation failed for rule 'required'"
 	if err.Error() != wantErr {
 		t.Fatalf("expected error message %q, got: %q", wantErr, err)
 	}
@@ -504,7 +536,7 @@ func TestFactory_MakeMap_ValidateCustomInvalid(t *testing.T) {
 			t.Fatalf("expected panic %q, got: %v", wantErr, r)
 		}
 	}()
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, _ = f.MakeMap(map[string]any{
 		"custom": "custom value",
 	})
@@ -515,7 +547,7 @@ func TestFactory_MakeMap_ValidateCustom(t *testing.T) {
 		ID     string `json:"id"     validate:"id,required"`
 		Custom string `json:"custom" validate:"custom,required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	f.Validator().RegisterValidation("custom", func(fl validator.FieldLevel) bool {
 		return fl.Field().String() == "test"
 	})
@@ -552,7 +584,7 @@ func TestFactory_MakeMap_ValidateCustom(t *testing.T) {
 }
 
 func TestFactory_MakeMap_WithID(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -576,7 +608,7 @@ func TestFactory_MakeMap_WithIDPersist(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Age  int    `json:"age"  validate:"required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -585,11 +617,14 @@ func TestFactory_MakeMap_WithIDPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal("expected error, got nil")
 	}
+	if r.ID != "u-123" {
+		t.Fatalf("expected ID to be 'u-123', got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "u-123" {
-		t.Fatalf("expected ID to be 'u-123', got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID to be 'u-123', got '%s'", r.Value.ID)
 	}
 	if r.Map == nil {
 		t.Fatal("expected non-nil Map")
@@ -612,6 +647,47 @@ func TestFactory_MakeMap_WithIDPersist(t *testing.T) {
 	if err.Error() != wantErr {
 		t.Fatalf("expected error message %q, got: %q", wantErr, err)
 	}
+
+	f = New[testStruct, string]()
+	r, err = f.MakeMap(map[string]any{
+		"id":   "",
+		"name": "Alice",
+		"age":  30,
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr = "field 'testStruct.id' validation failed for rule 'required'"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+}
+
+func TestFactory_MakeMap_WithIDPersistInvalid(t *testing.T) {
+	type testStruct struct {
+		ID   string `json:"id"   validate:"id,persist,required,len=5"`
+		Name string `json:"name" validate:"required"`
+		Age  int    `json:"age"  validate:"required"`
+	}
+	f := New[testStruct, string]()
+	r, err := f.MakeMap(map[string]any{
+		"id":   22,
+		"name": "Alice",
+		"age":  30,
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "id field 'id' has invalid type"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if r.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", r.ID)
+	}
+	if r.Map == nil {
+		t.Fatal("expected non-nil Map")
+	}
 }
 
 func TestFactory_MakeMap_WithAuto(t *testing.T) {
@@ -620,7 +696,7 @@ func TestFactory_MakeMap_WithAuto(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 		"auto": "test",
@@ -667,7 +743,7 @@ func TestFactory_MakeMap_WithAutoFull(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto:full,required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 		"auto": "test",
@@ -693,6 +769,9 @@ func TestFactory_MakeMap_WithAutoFull(t *testing.T) {
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
+	if r.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
@@ -714,7 +793,7 @@ func TestFactory_MakeMap_WithAutoPartial(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto:partial"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 		"auto": "test",
@@ -752,7 +831,7 @@ func TestFactory_MakeMap_WithAutoInvalid(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 	}, AutoMap{
@@ -778,7 +857,7 @@ func TestFactory_MakeMap_WithPersist(t *testing.T) {
 		Name    string `json:"name"    validate:"required"`
 		Persist string `json:"persist" validate:"persist"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 	})
@@ -792,6 +871,9 @@ func TestFactory_MakeMap_WithPersist(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal("expected no error, got", err)
+	}
+	if r.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", r.ID)
 	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
@@ -812,7 +894,7 @@ func TestFactory_MakeMap_WithPersist(t *testing.T) {
 		Name    string `json:"name"    validate:"required"`
 		Persist string `json:"persist" validate:"persist,required"`
 	}
-	f2 := New[testStruct2]()
+	f2 := New[testStruct2, string]()
 	_, err = f2.MakeMap(map[string]any{
 		"name": "Alice",
 	})
@@ -831,7 +913,7 @@ func TestFactory_MakeMap_WithReadonly(t *testing.T) {
 		Name   string `json:"name"   validate:"required"`
 		ROTest string `json:"roTest" validate:"readonly"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.MakeMap(map[string]any{
 		"name": "Alice",
 	})
@@ -853,7 +935,7 @@ func TestFactory_MakeMap_WithReadonly(t *testing.T) {
 }
 
 func TestFactory_MakeMapMany(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMapMany([]map[string]any{
 		{
 			"name": "Alice",
@@ -872,11 +954,17 @@ func TestFactory_MakeMapMany(t *testing.T) {
 	}
 
 	a := r[0]
+	if a.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", a.ID)
+	}
 	if a.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if a.Value.ID != "" {
-		t.Fatalf("expected ID to be empty, got '%s'", a.Value.ID)
+		t.Fatalf("expected value ID to be empty, got '%s'", a.Value.ID)
+	}
+	if a.Map == nil {
+		t.Fatal("expected non-nil Map")
 	}
 	if a.Value.Name != "Alice" {
 		t.Fatalf("expected name 'Alice', got '%s'", a.Value.Name)
@@ -904,11 +992,14 @@ func TestFactory_MakeMapMany(t *testing.T) {
 	}
 
 	b := r[1]
+	if b.ID != "" {
+		t.Fatalf("expected ID to be empty, got '%s'", b.ID)
+	}
 	if b.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if b.Value.ID != "" {
-		t.Fatalf("expected ID to be empty, got '%s'", b.Value.ID)
+		t.Fatalf("expected value ID to be empty, got '%s'", b.Value.ID)
 	}
 	if b.Value.Name != "Bob" {
 		t.Fatalf("expected name 'Bob', got '%s'", b.Value.Name)
@@ -937,7 +1028,7 @@ func TestFactory_MakeMapMany(t *testing.T) {
 }
 
 func TestFactory_MakeMapMany_Empty(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMapMany([]map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -952,7 +1043,7 @@ func TestFactory_MakeMapMany_Empty(t *testing.T) {
 }
 
 func TestFactory_MakeMapMany_WithIndexError(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakeMapMany([]map[string]any{
 		{
 			"name": "Alice",
@@ -976,16 +1067,19 @@ func TestFactory_MakeMapMany_WithIndexError(t *testing.T) {
 }
 
 func TestFactory_MakePartial(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartial([]byte(`{"id":"u-123","name":"Alice","age":30}`))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+	if r.ID != "u-123" {
+		t.Fatalf("expected ID to be 'u-123', got '%s'", r.ID)
 	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "u-123" {
-		t.Fatalf("expected ID 'u-123', got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID 'u-123', got '%s'", r.Value.ID)
 	}
 	if r.Value.Name != "Alice" {
 		t.Fatalf("expected name 'Alice', got '%s'", r.Value.Name)
@@ -1027,7 +1121,7 @@ func TestFactory_MakePartial_Nested(t *testing.T) {
 		Name string      `json:"name" validate:"required"`
 		TS2  testStruct2 `json:"ts2"  validate:"required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartial([]byte(`{
 		"id": "test1",
 		"name": "test1",
@@ -1042,11 +1136,14 @@ func TestFactory_MakePartial_Nested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+	if r.ID != "test1" {
+		t.Fatalf("expected ID to be 'test1', got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "test1" {
-		t.Fatalf("expected ID to be 'test1', got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID to be 'test1', got '%s'", r.Value.ID)
 	}
 	if r.Value.Name != "test1" {
 		t.Fatalf("expected name 'test1', got '%s'", r.Value.Name)
@@ -1142,7 +1239,7 @@ func TestFactory_MakePartial_Any(t *testing.T) {
 		Name   string `json:"name"   validate:"required"`
 		Config any    `json:"config"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.MakePartial([]byte(`{"id":"test1","name":"test2"}`))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -1154,7 +1251,7 @@ func TestFactory_MakePartial_Any(t *testing.T) {
 }
 
 func TestFactory_MakePartial_InvalidJSON(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	_, err := f.MakePartial([]byte(`{"id":"u-123","name":"Alice","age":30,}`))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -1167,7 +1264,7 @@ func TestFactory_MakePartial_InvalidJSON(t *testing.T) {
 }
 
 func TestFactory_MakePartialMany(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMany([]byte(`[
 		{"id":"u-123","name":"Alice","age":30},
 		{"id":"u-456","name":"Bob","age":25}
@@ -1245,7 +1342,7 @@ func TestFactory_MakePartialMany(t *testing.T) {
 }
 
 func TestFactory_MakePartialMany_InvalidJSON(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMany([]byte(`[
 		{"id":"u-123","name":"Alice","age":30},
 		{"id":"u-456","name":"Bob","age":25,}
@@ -1264,7 +1361,7 @@ func TestFactory_MakePartialMany_InvalidJSON(t *testing.T) {
 }
 
 func TestFactory_MakePartialMany_Empty(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMany([]byte(`[]`))
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -1279,7 +1376,7 @@ func TestFactory_MakePartialMany_Empty(t *testing.T) {
 }
 
 func TestFactory_MakePartialMany_WithIndexError(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMany([]byte(`[
 		{"id":"u-123","name":"Alice","age":30},
 		{"id":"u-456","name":"","age":25}
@@ -1297,7 +1394,7 @@ func TestFactory_MakePartialMany_WithIndexError(t *testing.T) {
 }
 
 func TestFactory_MakePartialMap(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1306,11 +1403,14 @@ func TestFactory_MakePartialMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
+	if r.ID != "u-123" {
+		t.Fatalf("expected ID to be 'u-123', got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "u-123" {
-		t.Fatalf("expected ID 'u-123', got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID 'u-123', got '%s'", r.Value.ID)
 	}
 	if r.Value.Name != "Alice" {
 		t.Fatalf("expected name 'Alice', got '%s'", r.Value.Name)
@@ -1337,7 +1437,7 @@ func TestFactory_MakePartialMap(t *testing.T) {
 		t.Fatalf("expected age 30, got %d", age)
 	}
 
-	f = New[testUser]()
+	f = New[testUser, string]()
 	_, err = f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1349,7 +1449,7 @@ func TestFactory_MakePartialMap(t *testing.T) {
 
 func TestFactory_MakePartialMap_ZeroFields(t *testing.T) {
 	type testStruct struct{}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartialMap(map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -1367,7 +1467,7 @@ func TestFactory_MakePartialMap_ZeroFields(t *testing.T) {
 }
 
 func TestFactory_MakePartialMap_Empty(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMap(map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -1382,7 +1482,7 @@ func TestFactory_MakePartialMap_Empty(t *testing.T) {
 }
 
 func TestFactory_MakePartialMap_MissingID(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"name": "Alice",
 		"age":  30,
@@ -1405,7 +1505,7 @@ func TestFactory_MakePartialMap_WithIDPersist(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Age  int    `json:"age"  validate:"required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1427,8 +1527,26 @@ func TestFactory_MakePartialMap_WithIDPersist(t *testing.T) {
 	}
 }
 
+func TestFactory_MakePartialMap_InvalidID(t *testing.T) {
+	f := New[testUser, string]()
+	r, err := f.MakePartialMap(map[string]any{
+		"id":   1,
+		"name": "Alice",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "id field 'id' has invalid type"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if r.Value != nil {
+		t.Fatal("expected nil Doc, got non-nil")
+	}
+}
+
 func TestFactory_MakePartialMap_OnlyID(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id": "u-123",
 	})
@@ -1445,7 +1563,7 @@ func TestFactory_MakePartialMap_OnlyID(t *testing.T) {
 }
 
 func TestFactory_MakePartialMap_UnknownField(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":  "u-123",
 		"foo": "bar",
@@ -1470,7 +1588,7 @@ func TestFactory_MakePartialMap_UnknownFieldNested(t *testing.T) {
 		ID     string     `json:"id"     validate:"id"`
 		Nested testNested `json:"nested" validate:"required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.MakePartialMap(map[string]any{
 		"id": "u-123",
 		"nested": map[string]any{
@@ -1493,7 +1611,7 @@ func TestFactory_MakePartialMap_WithAuto(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1521,11 +1639,14 @@ func TestFactory_MakePartialMap_WithAuto(t *testing.T) {
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
+	if r.ID != "u-123" {
+		t.Fatalf("expected ID 'u-123', got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "u-123" {
-		t.Fatalf("expected ID 'u-123', got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID 'u-123', got '%s'", r.Value.ID)
 	}
 	if r.Value.Auto != "test" {
 		t.Fatalf("expected Auto 'test', got '%s'", r.Value.Auto)
@@ -1553,7 +1674,7 @@ func TestFactory_MakePartialMap_WithAutoFull(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto:full"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1593,7 +1714,7 @@ func TestFactory_MakePartialMap_WithAutoPartial(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto:partial"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1642,7 +1763,7 @@ func TestFactory_MakePartialMap_WithAutoInvalid(t *testing.T) {
 		Name string `json:"name" validate:"required"`
 		Auto string `json:"auto" validate:"auto"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1669,7 +1790,7 @@ func TestFactory_MakePartialMap_WithPersist(t *testing.T) {
 		Name        string `json:"name"        validate:"required"`
 		PersistTest string `json:"persistTest" validate:"persist"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	r, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1693,11 +1814,14 @@ func TestFactory_MakePartialMap_WithPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal("expected no error, got", err)
 	}
+	if r.ID != "u-123" {
+		t.Fatalf("expected ID 'u-123', got '%s'", r.ID)
+	}
 	if r.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if r.Value.ID != "u-123" {
-		t.Fatalf("expected ID 'u-123', got '%s'", r.Value.ID)
+		t.Fatalf("expected value ID 'u-123', got '%s'", r.Value.ID)
 	}
 	if r.Value.PersistTest != "test" {
 		t.Fatalf("expected PersistTest 'test', got '%s'", r.Value.PersistTest)
@@ -1715,7 +1839,7 @@ func TestFactory_MakePartialMap_WithPersist(t *testing.T) {
 		Name        string `json:"name"        validate:"required"`
 		PersistTest string `json:"persistTest" validate:"persist,required"`
 	}
-	f2 := New[testStruct2]()
+	f2 := New[testStruct2, string]()
 	_, err = f2.MakePartialMap(map[string]any{
 		"id":          "u-123",
 		"name":        "Alice2",
@@ -1736,7 +1860,7 @@ func TestFactory_MakePartialMap_WithReadonly(t *testing.T) {
 		Name   string `json:"name"   validate:"required"`
 		ROTest string `json:"roTest" validate:"readonly"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "Alice",
@@ -1760,7 +1884,7 @@ func TestFactory_MakePartialMap_WithReadonly(t *testing.T) {
 }
 
 func TestFactory_MakePartialMap_Validate(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	_, err := f.MakePartialMap(map[string]any{
 		"id":   "u-123",
 		"name": "",
@@ -1770,6 +1894,36 @@ func TestFactory_MakePartialMap_Validate(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 	wantErr := "field 'testUser.name' validation failed for rule 'required'"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+
+	type testStruct struct {
+		ID   string `json:"id"             validate:"id,required,len=5"`
+		Name string `json:"name,omitempty" validate:"required"`
+	}
+	f2 := New[testStruct, string]()
+	_, err = f2.MakePartialMap(map[string]any{
+		"id":   "u-123",
+		"name": "",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr = "field 'testStruct.name' validation failed for rule 'required'"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+
+	f2 = New[testStruct, string]()
+	_, err = f2.MakePartialMap(map[string]any{
+		"id":   "",
+		"name": "test",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr = "field 'testStruct.id' validation failed for rule 'required'"
 	if err.Error() != wantErr {
 		t.Fatalf("expected error message %q, got: %q", wantErr, err)
 	}
@@ -1786,7 +1940,7 @@ func TestFactory_MakePartialMap_ValidateCustomInvalid(t *testing.T) {
 			t.Fatalf("expected panic %q, got: %v", wantErr, r)
 		}
 	}()
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	_, _ = f.MakePartialMap(map[string]any{
 		"id":     "u-123",
 		"custom": "custom value",
@@ -1798,7 +1952,7 @@ func TestFactory_MakePartialMap_ValidateCustom(t *testing.T) {
 		ID     string `json:"id"     validate:"id,required"`
 		Custom string `json:"custom" validate:"custom,required"`
 	}
-	f := New[testStruct]()
+	f := New[testStruct, string]()
 	f.Validator().RegisterValidation("custom", func(fl validator.FieldLevel) bool {
 		return fl.Field().String() == "test"
 	})
@@ -1837,7 +1991,7 @@ func TestFactory_MakePartialMap_ValidateCustom(t *testing.T) {
 }
 
 func TestFactory_MakePartialMapMany(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMapMany([]map[string]any{
 		{
 			"id":   "u-123",
@@ -1858,11 +2012,14 @@ func TestFactory_MakePartialMapMany(t *testing.T) {
 	}
 
 	a := r[0]
+	if a.ID != "u-123" {
+		t.Fatalf("expected ID 'u-123', got '%s'", a.ID)
+	}
 	if a.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if a.Value.ID != "u-123" {
-		t.Fatalf("expected ID 'u-123', got '%s'", a.Value.ID)
+		t.Fatalf("expected value ID 'u-123', got '%s'", a.Value.ID)
 	}
 	if a.Value.Name != "Alice" {
 		t.Fatalf("expected Name 'Alice', got '%s'", a.Value.Name)
@@ -1890,11 +2047,14 @@ func TestFactory_MakePartialMapMany(t *testing.T) {
 	}
 
 	b := r[1]
+	if b.ID != "u-124" {
+		t.Fatalf("expected ID 'u-124', got '%s'", b.ID)
+	}
 	if b.Value == nil {
 		t.Fatal("expected non-nil Doc")
 	}
 	if b.Value.ID != "u-124" {
-		t.Fatalf("expected ID 'u-124', got '%s'", b.Value.ID)
+		t.Fatalf("expected value ID 'u-124', got '%s'", b.Value.ID)
 	}
 	if b.Value.Name != "Bob" {
 		t.Fatalf("expected Name 'Bob', got '%s'", b.Value.Name)
@@ -1923,7 +2083,7 @@ func TestFactory_MakePartialMapMany(t *testing.T) {
 }
 
 func TestFactory_MakePartialMapMany_Empty(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMapMany([]map[string]any{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -1938,7 +2098,7 @@ func TestFactory_MakePartialMapMany_Empty(t *testing.T) {
 }
 
 func TestFactory_MakePartialMapMany_WithIndexError(t *testing.T) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	r, err := f.MakePartialMapMany([]map[string]any{
 		{
 			"id":   "u-123",
@@ -1960,6 +2120,206 @@ func TestFactory_MakePartialMapMany_WithIndexError(t *testing.T) {
 	}
 	if len(r) != 0 {
 		t.Fatalf("expected 0 results, got %d", len(r))
+	}
+}
+
+type mockErrorReader struct{}
+
+func (m mockErrorReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("mock read error")
+}
+
+func TestFactory_Read(t *testing.T) {
+	f := New[testUser, string]()
+	b := bytes.NewReader([]byte(`{"name":"Alice","age":30}`))
+	v, err := f.Read(b)
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if v.ID != "" {
+		t.Fatalf("expected empty ID, got '%s'", v.ID)
+	}
+	if v.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if v.Value.ID != "" {
+		t.Fatalf("expected empty value ID, got '%s'", v.Value.ID)
+	}
+	if v.Value.Name != "Alice" {
+		t.Fatalf("expected Name 'Alice', got '%s'", v.Value.Name)
+	}
+	if v.Value.Age != 30 {
+		t.Fatalf("expected Age 30, got %d", v.Value.Age)
+	}
+
+	_, err = f.Read(mockErrorReader{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "failed to read input: mock read error"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if !errors.Is(err, ErrRead) {
+		t.Fatalf("expected error to be ErrRead, got: %v", err)
+	}
+}
+
+func TestFactory_ReadMany(t *testing.T) {
+	f := New[testUser, string]()
+	b := bytes.NewReader([]byte(`[
+		{"name":"Alice","age":30},
+		{"name":"Bob","age":25}
+	]`))
+	v, err := f.ReadMany(b)
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if len(v) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(v))
+	}
+
+	a := v[0]
+	if a.ID != "" {
+		t.Fatalf("expected empty ID, got '%s'", a.ID)
+	}
+	if a.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if a.Value.ID != "" {
+		t.Fatalf("expected empty value ID, got '%s'", a.Value.ID)
+	}
+	if a.Value.Name != "Alice" {
+		t.Fatalf("expected Name 'Alice', got '%s'", a.Value.Name)
+	}
+	if a.Value.Age != 30 {
+		t.Fatalf("expected Age 30, got %d", a.Value.Age)
+	}
+
+	bb := v[1]
+	if bb.ID != "" {
+		t.Fatalf("expected empty ID, got '%s'", bb.ID)
+	}
+	if bb.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if bb.Value.ID != "" {
+		t.Fatalf("expected empty value ID, got '%s'", bb.Value.ID)
+	}
+	if bb.Value.Name != "Bob" {
+		t.Fatalf("expected Name 'Bob', got '%s'", bb.Value.Name)
+	}
+	if bb.Value.Age != 25 {
+		t.Fatalf("expected Age 25, got %d", bb.Value.Age)
+	}
+
+	_, err = f.ReadMany(mockErrorReader{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "failed to read input: mock read error"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if !errors.Is(err, ErrRead) {
+		t.Fatalf("expected error to be ErrRead, got: %v", err)
+	}
+}
+
+func TestFactory_ReadPartial(t *testing.T) {
+	f := New[testUser, string]()
+	b := bytes.NewReader([]byte(`{"id":"u-123","name":"Alice","age":30}`))
+	v, err := f.ReadPartial(b)
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if v.ID != "u-123" {
+		t.Fatalf("expected ID 'u-123', got '%s'", v.ID)
+	}
+	if v.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if v.Value.ID != "u-123" {
+		t.Fatalf("expected value ID 'u-123', got '%s'", v.Value.ID)
+	}
+	if v.Value.Name != "Alice" {
+		t.Fatalf("expected Name 'Alice', got '%s'", v.Value.Name)
+	}
+	if v.Value.Age != 30 {
+		t.Fatalf("expected Age 30, got %d", v.Value.Age)
+	}
+
+	_, err = f.ReadPartial(mockErrorReader{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "failed to read input: mock read error"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if !errors.Is(err, ErrRead) {
+		t.Fatalf("expected error to be ErrRead, got: %v", err)
+	}
+}
+
+func TestFactory_ReadPartialMany(t *testing.T) {
+	f := New[testUser, string]()
+	b := bytes.NewReader([]byte(`[
+		{"id":"u-123","name":"Alice","age":30},
+		{"id":"u-124","name":"Bob","age":25}
+	]`))
+	v, err := f.ReadPartialMany(b)
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if len(v) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(v))
+	}
+
+	a := v[0]
+	if a.ID != "u-123" {
+		t.Fatalf("expected ID 'u-123', got '%s'", a.ID)
+	}
+	if a.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if a.Value.ID != "u-123" {
+		t.Fatalf("expected value ID 'u-123', got '%s'", a.Value.ID)
+	}
+	if a.Value.Name != "Alice" {
+		t.Fatalf("expected Name 'Alice', got '%s'", a.Value.Name)
+	}
+	if a.Value.Age != 30 {
+		t.Fatalf("expected Age 30, got %d", a.Value.Age)
+	}
+
+	bb := v[1]
+	if bb.ID != "u-124" {
+		t.Fatalf("expected ID 'u-124', got '%s'", bb.ID)
+	}
+	if bb.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if bb.Value.ID != "u-124" {
+		t.Fatalf("expected value ID 'u-124', got '%s'", bb.Value.ID)
+	}
+	if bb.Value.Name != "Bob" {
+		t.Fatalf("expected Name 'Bob', got '%s'", bb.Value.Name)
+	}
+	if bb.Value.Age != 25 {
+		t.Fatalf("expected Age 25, got %d", bb.Value.Age)
+	}
+
+	_, err = f.ReadPartialMany(mockErrorReader{})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "failed to read input: mock read error"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if !errors.Is(err, ErrRead) {
+		t.Fatalf("expected error to be ErrRead, got: %v", err)
 	}
 }
 
@@ -2051,7 +2411,7 @@ func BenchmarkBaselineJSONMany(b *testing.B) {
 }
 
 func BenchmarkFactory_Make(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.Make([]byte(`{"name":"test1","age":30}`))
@@ -2062,7 +2422,7 @@ func BenchmarkFactory_Make(b *testing.B) {
 }
 
 func BenchmarkFactory_MakeMany(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakeMany([]byte(`[
@@ -2076,7 +2436,7 @@ func BenchmarkFactory_MakeMany(b *testing.B) {
 }
 
 func BenchmarkFactory_MakeMap(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakeMap(map[string]any{"name": "test1", "age": 30})
@@ -2087,7 +2447,7 @@ func BenchmarkFactory_MakeMap(b *testing.B) {
 }
 
 func BenchmarkFactory_MakeMapMany(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakeMapMany([]map[string]any{
@@ -2101,7 +2461,7 @@ func BenchmarkFactory_MakeMapMany(b *testing.B) {
 }
 
 func BenchmarkFactory_MakePartial(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakePartial([]byte(`{"id":"test1","name":"test1","age":30}`))
@@ -2112,7 +2472,7 @@ func BenchmarkFactory_MakePartial(b *testing.B) {
 }
 
 func BenchmarkFactory_MakePartialMany(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakePartialMany([]byte(`[
@@ -2126,7 +2486,7 @@ func BenchmarkFactory_MakePartialMany(b *testing.B) {
 }
 
 func BenchmarkFactory_MakePartialMap(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakePartialMap(map[string]any{"id": "test1", "name": "test1", "age": 30})
@@ -2137,7 +2497,7 @@ func BenchmarkFactory_MakePartialMap(b *testing.B) {
 }
 
 func BenchmarkFactory_MakePartialMapMany(b *testing.B) {
-	f := New[testUser]()
+	f := New[testUser, string]()
 	b.ReportAllocs()
 	for b.Loop() {
 		_, err := f.MakePartialMapMany([]map[string]any{
