@@ -130,6 +130,8 @@ http.HandleFunc("POST /user", func(w http.ResponseWriter, r *http.Request) {
     defer r.Body.Close()
 
     doc, err := f.Read(r.Body)
+    // or use limited reader
+    // doc, err := f.Read(io.LimitReader(r.Body, 10 * 1024 * 1024)) // limit to 10 MB
     if err != nil {
         if errors.Is(err, jem.ErrRead) { // reading error
             http.Error(w, err.Error(), http.StatusBadRequest)
@@ -144,7 +146,6 @@ http.HandleFunc("POST /user", func(w http.ResponseWriter, r *http.Request) {
 ```
 
 Reader methods are: `Read`, `ReadMany`, `ReadPartial`, `ReadPartialMany`.
-By defaults `jem.LimitReadSize` is set to 10 MB to avoid reading very large inputs. You can set it to `0` to disable the limit or change it to a different size (in bytes).
 
 ## Validation
 

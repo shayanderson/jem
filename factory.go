@@ -13,11 +13,6 @@ import (
 // ErrRead is returned when reading from the reader fails
 var ErrRead = errors.New("failed to read input")
 
-// LimitReadSize limits the maximum size of the reader input
-// default is 10 MB
-// set to 0 to disable limit
-var LimitReadSize int64 = 10 * 1024 * 1024 // 10 MB
-
 // AutoMap is a map of auto-generated field names to their values
 type AutoMap = map[string]func() any
 
@@ -338,11 +333,7 @@ func (f *Factory[T, ID]) MakePartialMapMany(
 }
 
 // Read reads from the reader, decodes and maps the JSON document to the entity and validates it
-// LimitReadSize limits the maximum size of the reader input
 func (f *Factory[T, ID]) Read(reader io.Reader, auto ...AutoMap) (Doc[T, ID], error) {
-	if LimitReadSize > 0 {
-		reader = io.LimitReader(reader, LimitReadSize)
-	}
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return Doc[T, ID]{}, fmt.Errorf("%w: %v", ErrRead, err)
@@ -352,11 +343,7 @@ func (f *Factory[T, ID]) Read(reader io.Reader, auto ...AutoMap) (Doc[T, ID], er
 
 // ReadMany reads from the reader, decodes and maps the JSON array to multiple entities
 // and validates them
-// LimitReadSize limits the maximum size of the reader input
 func (f *Factory[T, ID]) ReadMany(reader io.Reader, auto ...AutoMap) ([]Doc[T, ID], error) {
-	if LimitReadSize > 0 {
-		reader = io.LimitReader(reader, LimitReadSize)
-	}
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRead, err)
@@ -366,11 +353,7 @@ func (f *Factory[T, ID]) ReadMany(reader io.Reader, auto ...AutoMap) ([]Doc[T, I
 
 // ReadPartial reads from the reader, decodes and maps the JSON document to the entity
 // and validates it
-// LimitReadSize limits the maximum size of the reader input
 func (f *Factory[T, ID]) ReadPartial(reader io.Reader, auto ...AutoMap) (Doc[T, ID], error) {
-	if LimitReadSize > 0 {
-		reader = io.LimitReader(reader, LimitReadSize)
-	}
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return Doc[T, ID]{}, fmt.Errorf("%w: %v", ErrRead, err)
@@ -380,11 +363,7 @@ func (f *Factory[T, ID]) ReadPartial(reader io.Reader, auto ...AutoMap) (Doc[T, 
 
 // ReadPartialMany reads from the reader, decodes and maps the JSON array to multiple entities
 // and validates them
-// LimitReadSize limits the maximum size of the reader input
 func (f *Factory[T, ID]) ReadPartialMany(reader io.Reader, auto ...AutoMap) ([]Doc[T, ID], error) {
-	if LimitReadSize > 0 {
-		reader = io.LimitReader(reader, LimitReadSize)
-	}
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRead, err)
