@@ -147,6 +147,28 @@ http.HandleFunc("POST /user", func(w http.ResponseWriter, r *http.Request) {
 
 Reader methods are: `Read`, `ReadMany`, `ReadPartial`, `ReadPartialMany`.
 
+## Custom ID Types
+
+JEM supports any comparable type as an ID, including custom types:
+
+```go
+type UserID string
+
+type User struct {
+    ID   UserID `json:"id" validate:"id,persist,required"`
+    Name string `json:"name" validate:"required"`
+}
+```
+
+JSON values are decoded as `string`, so custom ID types require an ID parser:
+
+```go
+f := jem.New[User, UserID]().
+    WithIDParser(jem.StringIDParser[UserID]())
+```
+
+For non-string ID types, provide a custom parser with `WithIDParser`.
+
 ## Validation
 
 JEM integrates with [`go-playground/validator`](https://github.com/go-playground/validator). You can use all its built-in rules (required, email, gte, etc.).

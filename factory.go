@@ -30,7 +30,8 @@ type Doc[T any, ID comparable] struct {
 
 // Factory is responsible for creating and validating entities
 type Factory[T any, ID comparable] struct {
-	entity *entity
+	entity  *entity
+	parseID func(any) (ID, error)
 }
 
 // New creates a new factory for the given entity type
@@ -106,8 +107,8 @@ func (f *Factory[T, ID]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T, ID],
 				)
 			}
 			// set ID value
-			id, ok := r.Map[k].(ID)
-			if !ok {
+			id, err := f.makeID(r.Map[k])
+			if err != nil {
 				return r, fmt.Errorf("id field '%s' has invalid type", k)
 			}
 			r.ID = id
@@ -225,8 +226,8 @@ func (f *Factory[T, ID]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[
 			return r, errors.New("input must have id field and at least one other field")
 		}
 		// set ID value
-		id, ok := r.Map[f.entity.id.tag].(ID)
-		if !ok {
+		id, err := f.makeID(r.Map[f.entity.id.tag])
+		if err != nil {
 			return r, fmt.Errorf("id field '%s' has invalid type", f.entity.id.tag)
 		}
 		r.ID = id
@@ -374,6 +375,43 @@ func (f *Factory[T, ID]) ReadPartialMany(reader io.Reader, auto ...AutoMap) ([]D
 // Validator returns the validator for the factory
 func (f *Factory[T, ID]) Validator() *validator.Validate {
 	return f.entity.validator
+}
+
+// WithIDParser sets the ID parser function for the factory
+func (f *Factory[T, ID]) WithIDParser(fn func(any) (ID, error)) *Factory[T, ID] {
+	f.parseID = fn
+	return f
+}
+
+// makeID converts the given value to the ID type using the parser function if provided
+// otherwise, it attempts to cast the value to the ID type directly
+// returns an error if the conversion fails
+func (f *Factory[T, ID]) makeID(v any) (ID, error) {
+	if f.parseID != nil {
+		return f.parseID(v)
+	}
+
+	id, ok := v.(ID)
+	if !ok {
+		var zero ID
+		return zero, errors.New("invalid id type")
+	}
+
+	return id, nil
+}
+
+// StringIDParser returns a parser function that converts a string to the ID type
+func StringIDParser[ID ~string]() func(any) (ID, error) {
+	return func(v any) (ID, error) {
+		var zero ID
+
+		s, ok := v.(string)
+		if !ok {
+			return zero, errors.New("invalid id type")
+		}
+
+		return ID(s), nil
+	}
 }
 
 // validationErrorHandler handles validation errors and returns a formatted error

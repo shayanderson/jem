@@ -934,6 +934,88 @@ func TestFactory_MakeMap_WithReadonly(t *testing.T) {
 	}
 }
 
+func TestFactory_MakeMap_WithCustomIDType(t *testing.T) {
+	type testID string
+	type testStruct struct {
+		ID   testID `json:"id"   validate:"id,persist,required"`
+		Name string `json:"name" validate:"required"`
+	}
+	f := New[testStruct, testID]()
+	_, err := f.MakeMap(map[string]any{
+		"id":   "u-123",
+		"name": "Alice",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "id field 'id' has invalid type"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+
+	f = New[testStruct, testID]().WithIDParser(func(a any) (testID, error) {
+		id, ok := a.(string)
+		if !ok {
+			return "", errors.New("wrong type")
+		}
+		return testID(id), nil
+	})
+	r, err := f.MakeMap(map[string]any{
+		"id":   "u-123",
+		"name": "Alice",
+	})
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if r.ID != "u-123" {
+		t.Fatalf("expected ID to be 'u-123', got '%s'", r.ID)
+	}
+	if r.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if r.Value.ID != "u-123" {
+		t.Fatalf("expected value ID to be 'u-123', got '%s'", r.Value.ID)
+	}
+	if r.Value.Name != "Alice" {
+		t.Fatalf("expected name 'Alice', got '%s'", r.Value.Name)
+	}
+	v, ok := r.Map["id"].(string)
+	if !ok {
+		t.Fatalf("expected id to be a string, got %T", r.Map["id"])
+	}
+	if v != "u-123" {
+		t.Fatalf("expected id 'u-123', got '%s'", v)
+	}
+
+	f = New[testStruct, testID]().WithIDParser(StringIDParser[testID]())
+	r, err = f.MakeMap(map[string]any{
+		"id":   "u-456",
+		"name": "Bob",
+	})
+	if err != nil {
+		t.Fatal("expected no error, got", err)
+	}
+	if r.ID != "u-456" {
+		t.Fatalf("expected ID to be 'u-456', got '%s'", r.ID)
+	}
+	if r.Value == nil {
+		t.Fatal("expected non-nil Doc")
+	}
+	if r.Value.ID != "u-456" {
+		t.Fatalf("expected value ID to be 'u-456', got '%s'", r.Value.ID)
+	}
+	if r.Value.Name != "Bob" {
+		t.Fatalf("expected name 'Bob', got '%s'", r.Value.Name)
+	}
+	v, ok = r.Map["id"].(string)
+	if !ok {
+		t.Fatalf("expected id to be a string, got %T", r.Map["id"])
+	}
+	if v != "u-456" {
+		t.Fatalf("expected id 'u-456', got '%s'", v)
+	}
+}
+
 func TestFactory_MakeMapMany(t *testing.T) {
 	f := New[testUser, string]()
 	r, err := f.MakeMapMany([]map[string]any{
@@ -2320,6 +2402,22 @@ func TestFactory_ReadPartialMany(t *testing.T) {
 	}
 	if !errors.Is(err, ErrRead) {
 		t.Fatalf("expected error to be ErrRead, got: %v", err)
+	}
+}
+
+func TestStringIDParser(t *testing.T) {
+	type testID string
+	fn := StringIDParser[testID]()
+	id, err := fn(1)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	wantErr := "invalid id type"
+	if err.Error() != wantErr {
+		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	}
+	if id != "" {
+		t.Fatalf("expected zero value, got: %v", id)
 	}
 }
 
