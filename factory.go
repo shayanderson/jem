@@ -31,7 +31,7 @@ type Doc[T any, ID comparable] struct {
 // Factory is responsible for creating and validating entities
 type Factory[T any, ID comparable] struct {
 	entity  *entity
-	parseID func(any) (ID, error)
+	parseID func(any) (ID, bool)
 }
 
 // New creates a new factory for the given entity type
@@ -107,8 +107,8 @@ func (f *Factory[T, ID]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T, ID],
 				)
 			}
 			// set ID value
-			id, err := f.makeID(r.Map[k])
-			if err != nil {
+			id, ok := f.makeID(r.Map[k])
+			if !ok {
 				return r, fmt.Errorf("id field '%s' has invalid type", k)
 			}
 			r.ID = id
@@ -226,8 +226,8 @@ func (f *Factory[T, ID]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[
 			return r, errors.New("input must have id field and at least one other field")
 		}
 		// set ID value
-		id, err := f.makeID(r.Map[f.entity.id.tag])
-		if err != nil {
+		id, ok := f.makeID(r.Map[f.entity.id.tag])
+		if !ok {
 			return r, fmt.Errorf("id field '%s' has invalid type", f.entity.id.tag)
 		}
 		r.ID = id
@@ -378,7 +378,7 @@ func (f *Factory[T, ID]) Validator() *validator.Validate {
 }
 
 // WithIDParser sets the ID parser function for the factory
-func (f *Factory[T, ID]) WithIDParser(fn func(any) (ID, error)) *Factory[T, ID] {
+func (f *Factory[T, ID]) WithIDParser(fn func(any) (ID, bool)) *Factory[T, ID] {
 	f.parseID = fn
 	return f
 }
@@ -386,7 +386,7 @@ func (f *Factory[T, ID]) WithIDParser(fn func(any) (ID, error)) *Factory[T, ID] 
 // makeID converts the given value to the ID type using the parser function if provided
 // otherwise, it attempts to cast the value to the ID type directly
 // returns an error if the conversion fails
-func (f *Factory[T, ID]) makeID(v any) (ID, error) {
+func (f *Factory[T, ID]) makeID(v any) (ID, bool) {
 	if f.parseID != nil {
 		return f.parseID(v)
 	}
@@ -394,23 +394,23 @@ func (f *Factory[T, ID]) makeID(v any) (ID, error) {
 	id, ok := v.(ID)
 	if !ok {
 		var zero ID
-		return zero, errors.New("invalid id type")
+		return zero, false
 	}
 
-	return id, nil
+	return id, true
 }
 
 // StringIDParser returns a parser function that converts a string to the ID type
-func StringIDParser[ID ~string]() func(any) (ID, error) {
-	return func(v any) (ID, error) {
+func StringIDParser[ID ~string]() func(any) (ID, bool) {
+	return func(v any) (ID, bool) {
 		var zero ID
 
 		s, ok := v.(string)
 		if !ok {
-			return zero, errors.New("invalid id type")
+			return zero, false
 		}
 
-		return ID(s), nil
+		return ID(s), true
 	}
 }
 

@@ -953,12 +953,12 @@ func TestFactory_MakeMap_WithCustomIDType(t *testing.T) {
 		t.Fatalf("expected error message %q, got: %q", wantErr, err)
 	}
 
-	f = New[testStruct, testID]().WithIDParser(func(a any) (testID, error) {
+	f = New[testStruct, testID]().WithIDParser(func(a any) (testID, bool) {
 		id, ok := a.(string)
 		if !ok {
-			return "", errors.New("wrong type")
+			return "", false
 		}
-		return testID(id), nil
+		return testID(id), true
 	})
 	r, err := f.MakeMap(map[string]any{
 		"id":   "u-123",
@@ -2408,13 +2408,9 @@ func TestFactory_ReadPartialMany(t *testing.T) {
 func TestStringIDParser(t *testing.T) {
 	type testID string
 	fn := StringIDParser[testID]()
-	id, err := fn(1)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	wantErr := "invalid id type"
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	id, ok := fn(1)
+	if ok {
+		t.Fatal("expected ok to be false, got true")
 	}
 	if id != "" {
 		t.Fatalf("expected zero value, got: %v", id)
