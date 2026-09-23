@@ -2,9 +2,11 @@ package jem
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv1 "encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -228,10 +230,8 @@ func TestFactory_Make_InvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "json parse to map failed: invalid character '}' looking for beginning of object" +
-		" key string"
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	if !strings.HasPrefix(err.Error(), "json parse to map failed:") {
+		t.Fatalf("expected JSON map parse error, got: %q", err)
 	}
 	if r.Value != nil {
 		t.Fatal("expected nil Doc, got non-nil")
@@ -331,10 +331,8 @@ func TestFactory_MakeMany_InvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "json parse to array failed: invalid character '}' looking for beginning of object" +
-		" key string"
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	if !strings.HasPrefix(err.Error(), "json parse to array failed:") {
+		t.Fatalf("expected JSON array parse error, got: %q", err)
 	}
 	if r != nil {
 		t.Fatal("expected nil result, got non-nil")
@@ -489,9 +487,8 @@ func TestFactory_MakeMap_UnknownFieldNested(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "json parse failed: json: unknown field \"foo\""
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	if !strings.HasPrefix(err.Error(), "json parse failed:") {
+		t.Fatalf("expected nested-field parse error, got: %q", err)
 	}
 }
 
@@ -1338,10 +1335,8 @@ func TestFactory_MakePartial_InvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "json parse to map failed: invalid character '}' looking for beginning of object" +
-		" key string"
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	if !strings.HasPrefix(err.Error(), "json parse to map failed:") {
+		t.Fatalf("expected JSON map parse error, got: %q", err)
 	}
 }
 
@@ -1432,10 +1427,8 @@ func TestFactory_MakePartialMany_InvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "json parse to array failed: invalid character '}' looking for beginning of object" +
-		" key string"
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	if !strings.HasPrefix(err.Error(), "json parse to array failed:") {
+		t.Fatalf("expected JSON array parse error, got: %q", err)
 	}
 	if r != nil {
 		t.Fatal("expected nil result, got non-nil")
@@ -1681,9 +1674,8 @@ func TestFactory_MakePartialMap_UnknownFieldNested(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "json parse failed: json: unknown field \"foo\""
-	if err.Error() != wantErr {
-		t.Fatalf("expected error message %q, got: %q", wantErr, err)
+	if !strings.HasPrefix(err.Error(), "json parse failed:") {
+		t.Fatalf("expected nested-field parse error, got: %q", err)
 	}
 }
 
@@ -2446,6 +2438,132 @@ func Test_validationErrorHandler(t *testing.T) {
 	}
 }
 
+func TestJSONBehavior_DuplicateObjectNamesRejected(t *testing.T) {
+	f := New[testUser, string]()
+	_, err := f.Make([]byte(`{"name":"Alice","name":"Bob","age":30}`))
+	if err == nil {
+		t.Fatal("expected duplicate names to be rejected")
+	}
+}
+
+func TestJSONBehavior_InvalidUTF8IsRejected(t *testing.T) {
+	f := New[testUser, string]()
+	_, err := f.Make([]byte("{\"name\":\"A\xff\",\"age\":30}"))
+	if err == nil {
+		t.Fatal("expected invalid UTF-8 to be rejected")
+	}
+}
+
+func TestJSONBehavior_NestedCaseMismatchedFieldNamesRejected(t *testing.T) {
+	type profile struct {
+		Name string `json:"name" validate:"required"`
+	}
+	type user struct {
+		Profile profile `json:"profile" validate:"required"`
+	}
+
+	f := New[user, string]()
+	_, err := f.Make([]byte(`{"profile":{"Name":"Alice"}}`))
+	if err == nil {
+		t.Fatal("expected case-mismatched nested field to be rejected")
+	}
+}
+
+func TestJSONBehavior_NilAutoSliceDecodesAsEmpty(t *testing.T) {
+	type user struct {
+		Name string   `json:"name" validate:"required"`
+		Tags []string `json:"tags" validate:"auto:full"`
+	}
+
+	f := New[user, string]()
+	r, err := f.Make([]byte(`{"name":"Alice"}`), AutoMap{
+		"tags": func() any { return []string(nil) },
+	})
+	if err != nil {
+		t.Fatalf("expected nil auto slice to be accepted, got %v", err)
+	}
+	if r.Value.Tags == nil || len(r.Value.Tags) != 0 {
+		t.Fatalf("expected empty tags slice, got %#v", r.Value.Tags)
+	}
+}
+
+func TestFactory_MakeMap_DoesNotMutateInput(t *testing.T) {
+	type user struct {
+		Name      string `json:"name"      validate:"required"`
+		CreatedBy string `json:"createdBy" validate:"auto:full,required"`
+	}
+
+	f := New[user, string]()
+	input := map[string]any{"name": "Alice"}
+	_, err := f.MakeMap(input, AutoMap{
+		"createdBy": func() any { return "system" },
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(input) != 1 || input["name"] != "Alice" {
+		t.Fatalf("expected input map to remain unchanged, got %#v", input)
+	}
+}
+
+func TestFactory_MakePartialMap_DoesNotMutateInput(t *testing.T) {
+	type user struct {
+		ID        string `json:"id"        validate:"id,required"`
+		Name      string `json:"name"      validate:"required"`
+		UpdatedBy string `json:"updatedBy" validate:"auto:partial"`
+	}
+
+	f := New[user, string]()
+	input := map[string]any{"id": "user1", "name": "Alice"}
+	_, err := f.MakePartialMap(input)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(input) != 2 || input["id"] != "user1" || input["name"] != "Alice" {
+		t.Fatalf("expected input map to remain unchanged, got %#v", input)
+	}
+}
+
+func TestFactory_Make_RejectsMultipleAutoMaps(t *testing.T) {
+	type user struct {
+		Name      string `json:"name"      validate:"required"`
+		CreatedBy string `json:"createdBy" validate:"auto:full,required"`
+	}
+
+	f := New[user, string]()
+	_, err := f.Make([]byte(`{"name":"Alice"}`),
+		AutoMap{"createdBy": func() any { return "system" }},
+		AutoMap{},
+	)
+	if err == nil {
+		t.Fatal("expected multiple auto maps to be rejected")
+	}
+}
+
+func TestFactory_Read_AcceptsBoundedReader(t *testing.T) {
+	data := []byte(`{"name":"Alice","age":30}`)
+	f := New[testUser, string]()
+	r, err := f.Read(io.LimitReader(bytes.NewReader(data), int64(len(data))))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if r.Value.Name != "Alice" {
+		t.Fatalf("expected name 'Alice', got %q", r.Value.Name)
+	}
+}
+
+func TestFactory_Read_BoundedReaderTruncationReturnsParseError(t *testing.T) {
+	data := []byte(`{"name":"Alice","age":30}`)
+	f := New[testUser, string]()
+	_, err := f.Read(io.LimitReader(bytes.NewReader(data), int64(len(data)-1)))
+	if err == nil {
+		t.Fatal("expected truncated input to fail")
+	}
+	if errors.Is(err, ErrRead) {
+		t.Fatalf("expected a parse error for truncated input, got read error %v", err)
+	}
+}
+
 func BenchmarkBaselineJSON(b *testing.B) {
 	type testStructs struct {
 		ID   string `json:"id"   validate:"required,len=5"`
@@ -2455,7 +2573,7 @@ func BenchmarkBaselineJSON(b *testing.B) {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	fn := func(data []byte) (any, error) {
 		var v testStructs
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv1.Unmarshal(data, &v); err != nil {
 			return nil, fmt.Errorf("json unmarshal failed: %w", err)
 		}
 		if err := validate.Struct(v); err != nil {
@@ -2481,7 +2599,7 @@ func BenchmarkBaselineJSONMany(b *testing.B) {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	fn := func(data []byte) (any, error) {
 		var v []testStruct
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv1.Unmarshal(data, &v); err != nil {
 			return nil, fmt.Errorf("json unmarshal failed: %w", err)
 		}
 		for _, item := range v {

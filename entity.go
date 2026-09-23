@@ -65,9 +65,7 @@ func newEntity(v any) *entity {
 		"readonly":     flagReadonly,
 	}
 	var flags flag
-	for i := 0; i < t.NumField(); i++ {
-		fl := t.Field(i)
-
+	for fl := range t.Fields() {
 		jTags := fieldTagValues("json", fl)
 		var jt string
 		if len(jTags) > 0 {

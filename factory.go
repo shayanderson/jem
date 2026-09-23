@@ -1,11 +1,11 @@
 package jem
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -77,12 +77,15 @@ func (f *Factory[T, ID]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T, ID],
 	if len(f.entity.fields) == 0 {
 		return r, fmt.Errorf("struct '%s' has zero fields with json tags", f.entity.name)
 	}
+	if len(auto) > 1 {
+		return r, errors.New("at most one auto map is allowed")
+	}
 
 	// check for empty input
 	if len(m) == 0 {
 		return r, errors.New("input is empty")
 	}
-	r.Map = m
+	r.Map = maps.Clone(m)
 
 	for k := range r.Map {
 		fl, ok := f.entity.field(k)
@@ -131,11 +134,8 @@ func (f *Factory[T, ID]) MakeMap(m map[string]any, auto ...AutoMap) (Doc[T, ID],
 		return r, fmt.Errorf("json marshal failed: %w", err)
 	}
 
-	// use decoder to detect unknown nested fields
-	decoder := json.NewDecoder(bytes.NewReader(v))
-	decoder.DisallowUnknownFields()
-	// decode
-	if err := decoder.Decode(&r.Value); err != nil {
+	// decode and reject unknown nested fields
+	if err := json.Unmarshal(v, &r.Value, json.RejectUnknownMembers(true)); err != nil {
 		return r, fmt.Errorf("json parse failed: %w", err)
 	}
 	// validate
@@ -209,12 +209,15 @@ func (f *Factory[T, ID]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[
 	if len(f.entity.fields) == 0 {
 		return r, fmt.Errorf("struct '%s' has zero fields with json tags", f.entity.name)
 	}
+	if len(auto) > 1 {
+		return r, errors.New("at most one auto map is allowed")
+	}
 
 	// check for empty input
 	if len(m) == 0 {
 		return r, errors.New("input is empty")
 	}
-	r.Map = m
+	r.Map = maps.Clone(m)
 
 	if f.entity.hasID() {
 		// verify id field exists in map
@@ -284,10 +287,8 @@ func (f *Factory[T, ID]) MakePartialMap(m map[string]any, auto ...AutoMap) (Doc[
 		return r, fmt.Errorf("json marshal failed: %w", err)
 	}
 
-	// use decoder to detect unknown nested fields
-	decoder := json.NewDecoder(bytes.NewReader(v))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&r.Value); err != nil {
+	// decode and reject unknown nested fields
+	if err := json.Unmarshal(v, &r.Value, json.RejectUnknownMembers(true)); err != nil {
 		return r, fmt.Errorf("json parse failed: %w", err)
 	}
 
@@ -417,13 +418,12 @@ func StringIDParser[ID ~string]() func(any) (ID, bool) {
 // validationErrorHandler handles validation errors and returns a formatted error
 func validationErrorHandler(err error) error {
 	if ve, ok := err.(validator.ValidationErrors); ok {
-		for _, f := range ve {
-			return fmt.Errorf(
-				"field '%s' validation failed for rule '%s'",
-				f.Namespace(),
-				f.Tag(),
-			)
-		}
+		f := ve[0]
+		return fmt.Errorf(
+			"field '%s' validation failed for rule '%s'",
+			f.Namespace(),
+			f.Tag(),
+		)
 	}
 	return err
 }

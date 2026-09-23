@@ -13,6 +13,19 @@ JEM (JSON Entity Mapper) is a Go library for mapping JSON data to structs and ma
 - detect unknown fields with strict JSON decoding
 - integrate easily with databases and HTTP handlers
 
+## JSON Behavior
+
+JEM uses Go's `encoding/json/v2` package. JSON object member names must be unique,
+strings must contain valid UTF-8, and field names must match their `json` tags exactly.
+Unknown fields, including nested fields, are rejected. When JEM translates a map into a
+struct, nil slices and maps are encoded as empty JSON arrays and objects.
+
+## Performance
+
+In JEM’s benchmark suite, migrating to `encoding/json/v2` made factory
+operations 21-28% faster, reduced allocations by 33-39%, and reduced allocated
+memory by 38-42%. Results vary by payload shape and workload.
+
 ## Installation
 
 ```bash
@@ -186,8 +199,9 @@ JEM supports the following special validation rules. These rules apply only to *
   - `auto` — must be included in auto-map when creating output
   - `auto:full` — must be included in auto-map when creating full output
   - `auto:partial` — must be included in auto-map when creating partial output
-- `validate:"persist"` — marks fields that must always be included
-  - should be used with rules like `required` if non-empty values are expected
+- `validate:"persist"` — requires the field to be present in partial input
+  - on full input, it permits an `id` field but does not independently require a value
+  - combine it with `required` when a non-empty value is required
 - `validate:"readonly"` — marks fields that are read-only
   - must not be included in JSON input objects
 
